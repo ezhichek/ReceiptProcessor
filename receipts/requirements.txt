@@ -1,1 +1,6 @@
 boto3
+langchain
+langchain-community
+langchain-aws
+amazon-textract-caller
+amazon-textract-textractor
