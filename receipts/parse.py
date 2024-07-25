@@ -18,7 +18,24 @@ def parse(file_path):
 
     prompt = ChatPromptTemplate.from_messages(
         [
-            ("system", "Given a receipt or invoice, please extract Merchant, Currency, Amount, VAT Rate and invoice number as JSON from that receipt or invoice"),
+            ("system", """
+                Given a receipt or invoice you should extract date, merchant, currency, total amount, vat amount and invoice number into a json structure. The structure should look like this:
+            
+                {{
+                    "merchant": "Some merchant",
+                    "currency": "EUR",
+                    "total_amount": 100,
+                    "vat_amount": 2.00,
+                    "invoice_number": "12345",
+                    "date": "2018-02-01"
+                }}
+                
+                1. Don't extract any line items but just totals! 
+                2. If you can't find a currency then take the default currency of the merchant's location!
+                3. Currency should be extracted or converted into a 3-digit currency code!
+                4. Date should be extracted or converted into ISO format!
+                """),
+
             ("human", "Please extract the following receipt: {receipt_text}"),
         ]
     )

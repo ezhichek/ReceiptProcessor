@@ -27,7 +27,7 @@ def lambda_handler(event, context):
         try:
             file_path = "s3://{bucket}/{file}".format(bucket=bucket, file=file)
             print(f"loading {file_path}\n")
-            text = parse(file_path)
+            text = parse(file_path).replace("\n", "")
             print(text)
 
         except Exception as e:
