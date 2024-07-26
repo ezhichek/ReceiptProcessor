@@ -40,7 +40,6 @@ def lambda_handler(event, context):
             continue
 
         try:
-
             print(f"Parsing receipt (model: {model_id}, with_textract: {with_textract}, bucket: {RECEIPTS_BUCKET}, file: {file}\n")
 
             json_chat_response = parse_receipt(RECEIPTS_BUCKET, file, model, with_textract)
@@ -53,9 +52,9 @@ def lambda_handler(event, context):
     json_str = json.dumps(json_responses)
 
     if with_textract:
-        store_results(RESULTS_BUCKET, f"results-{model_id}-textract.json", json_str)
+        write_json_file_to_bucket(RESULTS_BUCKET, f"results-{model_id}-textract.json", json_str)
     else:
-        store_results(RESULTS_BUCKET, f"results-{model_id}.json", json_str)
+        write_json_file_to_bucket(RESULTS_BUCKET, f"results-{model_id}.json", json_str)
 
 
 def parse_receipt(bucket, file, model, with_textract):
@@ -146,7 +145,7 @@ def parse_json_from_chat_response(chat_response):
         return None
 
 
-def store_results(bucket, file_name, json_content):
+def write_json_file_to_bucket(bucket, file_name, json_content):
     try:
         # Write the JSON data to the S3 bucket
         s3.put_object(
