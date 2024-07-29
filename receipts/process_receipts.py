@@ -1,6 +1,8 @@
 import base64
 import json
 import re
+from decimal import Decimal
+
 import boto3
 from langchain_aws import ChatBedrock
 from langchain_community.document_loaders import AmazonTextractPDFLoader
@@ -13,24 +15,49 @@ RESULTS_BUCKET = 'result-receipts'
 
 s3 = boto3.client('s3')
 textract = boto3.client('textract')
-bedrock = boto3.client("bedrock-runtime")
+dynamodb = boto3.resource('dynamodb')
+bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
 
+model_configs = {
+    'claude-3-sonnet-vanilla': {
+        'model': ChatBedrock(client=bedrock, model_id='anthropic.claude-3-sonnet-20240229-v1:0', model_kwargs={'max_tokens': 2048, 'temperature': 0.0}),
+        'use_textract': False
+    },
+    'claude-3-sonnet-textract': {
+        'model': ChatBedrock(client=bedrock, model_id='anthropic.claude-3-sonnet-20240229-v1:0', model_kwargs={'max_tokens': 2048, 'temperature': 0.0}),
+        'use_textract': True
+    },
+    'mistral-large-2402-textract': {
+        'model': ChatBedrock(client=bedrock, model_id='mistral.mistral-large-2402-v1:0'),
+        'use_textract': True
+    },
+    'llama3-70b-instruct-textract': {
+        'model': ChatBedrock(client=bedrock, model_id='meta.llama3-70b-instruct-v1:0'),
+        'use_textract': True
+    },
+    'titan-text-premier-textract': {
+        'model': ChatBedrock(client=bedrock, model_id='amazon.titan-text-premier-v1:0'),
+        'use_textract': True
+    }
+}
 
 def lambda_handler(event, context):
     query_params = event.get('queryStringParameters', {})
 
-    model_id = query_params.get('model_id', 'claude-3')
-    with_textract = query_params.get('with_textract', False)
+    model_id = query_params.get('model_id', 'claude-3-sonnet-textract')
 
-    model = create_model(model_id)
+    model_config = model_configs[model_id]
+
+    if model_config is None:
+        raise Exception('No model config with id {}'.format(model_id))
 
     response = s3.list_objects_v2(Bucket=RECEIPTS_BUCKET)
+
+    table = dynamodb.Table('receipts')
 
     if 'Contents' not in response:
         print(f"No objects found in bucket {RECEIPTS_BUCKET}")
         return
-
-    json_responses = []
 
     for obj in response['Contents']:
 
@@ -39,38 +66,34 @@ def lambda_handler(event, context):
             print(f"File {file} is not a supported image format. Skipping.")
             continue
 
-        try:
-            print(f"Parsing receipt (model: {model_id}, with_textract: {with_textract}, bucket: {RECEIPTS_BUCKET}, file: {file}\n")
+        json_chat_response = parse_receipt(RECEIPTS_BUCKET, file, model_config['model'], model_config['use_textract'])
 
-            json_chat_response = parse_receipt(RECEIPTS_BUCKET, file, model, with_textract)
-            if json_chat_response is not None:
-                json_responses.append(json_chat_response)
+        if json_chat_response is not None:
+            json_chat_response['model_id'] = model_id
+            json_chat_response['file_name'] = file
+            # convert all floats to Decimal (required by dynamo)
+            json_chat_response = json.loads(json.dumps(json_chat_response), parse_float=Decimal)
+            response = table.put_item(Item=json_chat_response)
 
-        except Exception as e:
-            print(f"Error processing file {file}: {str(e)}")
+def parse_receipt(bucket, file, model, use_textract):
+    try:
 
-    json_str = json.dumps(json_responses)
+        print(f"Parsing receipt (model: {model.model_id}, with_textract: {use_textract}, bucket: {bucket}, file: {file}\n")
 
-    if with_textract:
-        write_json_file_to_bucket(RESULTS_BUCKET, f"results-{model_id}-textract.json", json_str)
-    else:
-        write_json_file_to_bucket(RESULTS_BUCKET, f"results-{model_id}.json", json_str)
+        prompt = create_prompt(bucket, file, use_textract)
+        llm_chain = prompt | model | StrOutputParser()
+        chat_response = llm_chain.invoke({}).replace("\n", "")
 
+        print(chat_response)
 
-def parse_receipt(bucket, file, model, with_textract):
+        return parse_json_from_chat_response(chat_response)
 
-    prompt = create_prompt(bucket, file, with_textract)
-    llm_chain = prompt | model | StrOutputParser()
-    chat_response = llm_chain.invoke({}).replace("\n", "")
-
-    print(chat_response)
-
-    json_chat_response = parse_json_from_chat_response(chat_response)
-
-    return json_chat_response
+    except Exception as e:
+        print(f"Error processing file {file}: {str(e)}")
+        return None
 
 
-def create_prompt(bucket, file, with_textract):
+def create_prompt(bucket, file, use_textract):
 
     context_message = """
         Given a receipt or invoice you should extract date, merchant, currency, total amount, vat amount and invoice number into a json structure. The structure should look like this:
@@ -90,7 +113,7 @@ def create_prompt(bucket, file, with_textract):
         4. Date should be extracted or converted into ISO format!
         """
 
-    if with_textract:
+    if use_textract:
         file_path = "s3://{bucket}/{file}".format(bucket=bucket, file=file)
         document = AmazonTextractPDFLoader(file_path, client=textract).load()
         receipt_message = [
@@ -124,17 +147,6 @@ def create_prompt(bucket, file, with_textract):
     )
 
 
-def create_model(model):
-    if model == 'claude-3':
-        return ChatBedrock(
-            client=bedrock,
-            model_id="anthropic.claude-3-sonnet-20240229-v1:0",
-            model_kwargs={"max_tokens": 2048, "temperature": 0.0}
-        )
-
-    raise Exception(f"Unsupported model: {model}")
-
-
 def parse_json_from_chat_response(chat_response):
     json_match = re.search(r'\{.*?\}', chat_response, re.DOTALL)
     if json_match:
@@ -143,18 +155,3 @@ def parse_json_from_chat_response(chat_response):
         return json_data
     else:
         return None
-
-
-def write_json_file_to_bucket(bucket, file_name, json_content):
-    try:
-        # Write the JSON data to the S3 bucket
-        s3.put_object(
-            Bucket=bucket,
-            Key=file_name,
-            Body=json_content,
-            ContentType='application/json'
-        )
-        print(f'Successfully wrote data to {bucket}/{file_name}')
-
-    except Exception as e:
-        print(f'Error writing data to S3: {e}')

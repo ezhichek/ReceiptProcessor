@@ -5,7 +5,7 @@ Description: >
 
 Globals:
   Function:
-    Timeout: 500 # This sets a global timeout of 10 seconds for all functions, which can be overridden
+    Timeout: 900
 
 Resources:
   ProcessReceiptsFunction:
@@ -40,6 +40,11 @@ Resources:
                 - "s3:PutObject"
                 - "s3:PutObjectAcl"
               Resource: 'arn:aws:s3:::result-receipts/*'
+            - Effect: 'Allow'
+              Action:
+                - "dynamodb:PutItem"
+              Resource: 'arn:aws:dynamodb:eu-west-3:891377093620:table/receipts'
+
 
 Outputs:
 #  ProcessReceiptsApi:
