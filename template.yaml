@@ -8,6 +8,7 @@ Globals:
     Timeout: 900
 
 Resources:
+
   ProcessReceiptsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -45,15 +46,61 @@ Resources:
                 - "dynamodb:PutItem"
               Resource: 'arn:aws:dynamodb:eu-west-3:891377093620:table/receipts'
 
+  FetchReceiptsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: receipts/
+      Handler: receipts_api.lambda_handler
+      Runtime: python3.12
+      Architectures:
+        - arm64
+      Events:
+        ReceiptsApi:
+          Type: Api
+          Properties:
+            Path: /receipts
+            Method: get
+            RestApiId: !Ref ReceiptsApiGateway
+      Policies:
+        - S3ReadPolicy:
+            BucketName: my-receipts-bucket
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: 'Allow'
+              Action:
+                - "s3:PutObject"
+                - "s3:PutObjectAcl"
+              Resource: 'arn:aws:s3:::result-receipts/*'
+            - Effect: 'Allow'
+              Action:
+                - "dynamodb:Query"
+                - "dynamodb:Scan"
+              Resource: 'arn:aws:dynamodb:eu-west-3:891377093620:table/receipts'
 
-Outputs:
-#  ProcessReceiptsApi:
-#    Description: "API Gateway endpoint URL for Prod stage for Hello World function"
-#    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
-  ProcessReceiptsFunction:
-    Description: "ProcessReceipts Lambda Function ARN"
-    Value: !GetAtt ProcessReceiptsFunction.Arn
-  ProcessReceiptsFunctionIamRole:
-    Description: "Implicit IAM Role created for ProcessReceipts function"
-    Value: !GetAtt ProcessReceiptsFunctionRole.Arn
+  ReceiptsApiGateway:
+      Type: 'AWS::Serverless::Api'
+      Properties:
+        Name: ReceiptsApiGateway
+        StageName: default
+        Cors:
+          AllowMethods: "'OPTIONS,POST,GET'"
+          AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+          AllowOrigin: "'*'"
 
+
+#Outputs:
+#  ProcessReceiptsFunction:
+#    Description: "ProcessReceipts Lambda Function ARN"
+#    Value: !GetAtt ProcessReceiptsFunction.Arn
+#  ProcessReceiptsFunctionIamRole:
+#    Description: "Implicit IAM Role created for ProcessReceipts function"
+#    Value: !GetAtt ProcessReceiptsFunctionRole.Arn
+#  FetchReceiptsFunction:
+#    Description: "ProcessReceipts Lambda Function ARN"
+#    Value: !GetAtt FetchReceiptsFunction.Arn
+#  FetchReceiptsFunctionIamRole:
+#    Description: "Implicit IAM Role created for ProcessReceipts function"
+#    Value: !GetAtt FetchReceiptsFunctionRole.Arn
+#  ReceiptsApi:
+#    Description: "API Gateway endpoint URL for Prod stage for fetch_receipts function"
+#    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/receipts"
