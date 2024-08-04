@@ -76,6 +76,31 @@ Resources:
                 - "dynamodb:Query"
                 - "dynamodb:Scan"
               Resource: 'arn:aws:dynamodb:eu-west-3:891377093620:table/receipts'
+  UploadReceiptsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: receipts/
+      Handler: upload_receipts.lambda_handler
+      Runtime: python3.12
+      Architectures:
+        - arm64
+      Events:
+        UploadReceipts:
+          Type: Api
+          Properties:
+            Path: /upload_receipts
+            Method: post
+            RestApiId: !Ref ReceiptsApiGateway
+      Policies:
+        - S3WritePolicy:
+            BucketName: my-receipts-bucket
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: 'Allow'
+              Action:
+                - "s3:PutObject"
+                - "s3:PutObjectAcl"
+              Resource: 'arn:aws:s3:::my-receipts-bucket/*'
 
   ReceiptsApiGateway:
       Type: 'AWS::Serverless::Api'

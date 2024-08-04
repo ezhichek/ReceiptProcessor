@@ -96,7 +96,8 @@ def parse_receipt(bucket, file, model, use_textract):
 def create_prompt(bucket, file, use_textract):
 
     context_message = """
-        Given a receipt or invoice you should extract date, merchant, currency, total amount, vat amount and invoice number into a json structure. The structure should look like this:
+        Given a receipt or invoice you should extract date, merchant, currency, total amount, vat amount and invoice number into a json structure. 
+        The structure should look like this:
 
         {{
             "merchant": "Some merchant",
