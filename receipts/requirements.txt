@@ -4,3 +4,4 @@ langchain-community
 langchain-aws
 amazon-textract-caller
 amazon-textract-textractor
+multipart

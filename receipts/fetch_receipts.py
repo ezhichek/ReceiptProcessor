@@ -17,11 +17,13 @@ def lambda_handler(event, context):
         query_params = event.get('queryStringParameters', {})
         model_id = query_params.get('model', None)
 
+        print(f"Fetching receipts (model: {model_id})\n")
+
         if model_id is None:
             return {
                 'statusCode': 400,
                 'headers': DEFAULT_HEADERS,
-                'body': json.dumps("Model ID is required")
+                'body': 'Model-ID is required'
             }
 
         response = table.scan(
@@ -38,7 +40,7 @@ def lambda_handler(event, context):
         return {
             'statusCode': 500,
             'headers': DEFAULT_HEADERS,
-            'body': json.dumps('Error retrieving data: ' + str(e))
+            'body': 'Error retrieving data: '
         }
 
 

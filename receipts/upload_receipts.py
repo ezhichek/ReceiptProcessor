@@ -1,32 +1,48 @@
-import json
-import boto3
 import base64
-import os
+from io import BytesIO
+
+import boto3
+from multipart import parse_form_data
+
+RECEIPTS_BUCKET = 'my-receipts-bucket'
 
 s3 = boto3.client('s3')
-bucket_name = os.environ['BUCKET_NAME']
 
 DEFAULT_HEADERS = {
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
 }
+
 def lambda_handler(event, context):
     try:
-        body = json.loads(event['body'])
-        file_content = base64.b64decode(body['file'])
-        file_name = body['fileName']
 
-        s3.put_object(Bucket=bucket_name, Key=file_name, Body=file_content)
+        # HTTP headers are case-insensitive
+        headers = {k.lower(): v for k, v in event['headers'].items()}
+
+        # AWS API Gateway applies base64 encoding on binary data
+        body = base64.b64decode(event['body'])
+
+        # Parse the multipart form data
+        form, files = parse_form_data({
+            'CONTENT_TYPE': headers['content-type'],
+            'REQUEST_METHOD': 'POST',
+            'wsgi.input': BytesIO(body)
+        })
+
+        for key, file in files.items():
+            print(f"Uploading receipt (file name: {file.filename}, size: {file.size})\n")
+            s3.put_object(Bucket=RECEIPTS_BUCKET, Key=file.filename, Body=file.raw)
 
         return {
             'statusCode': 200,
             'headers': DEFAULT_HEADERS,
-            'body': json.dumps({'message': 'File uploaded successfully'})
+            'body': 'File uploaded successfully'
         }
+
     except Exception as e:
         return {
             'statusCode': 500,
             'headers': DEFAULT_HEADERS,
-            'body': json.dumps('Error uploading file: ' + str(e))
+            'body': 'Error uploading file: ' + str(e)
         }

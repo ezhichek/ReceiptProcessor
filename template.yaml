@@ -26,8 +26,6 @@ Resources:
       Policies:
         - S3ReadPolicy:
             BucketName: my-receipts-bucket
-        - S3WritePolicy:
-            BucketName: result-receipts
         - Version: '2012-10-17'
           Statement:
             - Effect: 'Allow'
@@ -38,11 +36,6 @@ Resources:
               Resource: '*'
             - Effect: 'Allow'
               Action:
-                - "s3:PutObject"
-                - "s3:PutObjectAcl"
-              Resource: 'arn:aws:s3:::result-receipts/*'
-            - Effect: 'Allow'
-              Action:
                 - "dynamodb:PutItem"
               Resource: 'arn:aws:dynamodb:eu-west-3:891377093620:table/receipts'
 
@@ -50,7 +43,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: receipts/
-      Handler: receipts_api.lambda_handler
+      Handler: fetch_receipts.lambda_handler
       Runtime: python3.12
       Architectures:
         - arm64
@@ -68,14 +61,10 @@ Resources:
           Statement:
             - Effect: 'Allow'
               Action:
-                - "s3:PutObject"
-                - "s3:PutObjectAcl"
-              Resource: 'arn:aws:s3:::result-receipts/*'
-            - Effect: 'Allow'
-              Action:
                 - "dynamodb:Query"
                 - "dynamodb:Scan"
               Resource: 'arn:aws:dynamodb:eu-west-3:891377093620:table/receipts'
+
   UploadReceiptsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -88,7 +77,7 @@ Resources:
         UploadReceipts:
           Type: Api
           Properties:
-            Path: /upload_receipts
+            Path: /receipts
             Method: post
             RestApiId: !Ref ReceiptsApiGateway
       Policies:
@@ -111,6 +100,8 @@ Resources:
           AllowMethods: "'OPTIONS,POST,GET'"
           AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
           AllowOrigin: "'*'"
+        BinaryMediaTypes:
+          - "multipart/form-data"
 
 
 #Outputs:
