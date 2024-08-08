@@ -9,6 +9,31 @@ Globals:
 
 Resources:
 
+  ReceiptsBucket:
+    Type: AWS::S3::Bucket
+#    Properties:
+#      BucketName: receipts
+#      AccessControl: Private
+
+  ReceiptsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: receipts
+      AttributeDefinitions:
+        - AttributeName: model_id
+          AttributeType: S
+        - AttributeName: file_name
+          AttributeType: S
+      KeySchema:
+        - AttributeName: model_id
+          KeyType: HASH  # Partition key
+        - AttributeName: file_name
+          KeyType: RANGE  # Sort key
+#      ProvisionedThroughput:
+#        ReadCapacityUnits: 1
+#        WriteCapacityUnits: 1
+      BillingMode: PAY_PER_REQUEST  # On-demand mode
+
   ProcessReceiptsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -19,13 +44,11 @@ Resources:
         - arm64
       Events:
         ProcessReceipts:
-          Type: Api
+          Type: S3
           Properties:
-            Path: /process_receipts
-            Method: get
+            Bucket: !Ref ReceiptsBucket
+            Events: s3:ObjectCreated:Put
       Policies:
-        - S3ReadPolicy:
-            BucketName: my-receipts-bucket
         - Version: '2012-10-17'
           Statement:
             - Effect: 'Allow'
@@ -36,8 +59,15 @@ Resources:
               Resource: '*'
             - Effect: 'Allow'
               Action:
+                - 's3:ReadObject'
+              Resource: !Sub 'arn:aws:s3:::*/*'
+            - Effect: 'Allow'
+              Action:
                 - "dynamodb:PutItem"
-              Resource: 'arn:aws:dynamodb:eu-west-3:891377093620:table/receipts'
+              Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ReceiptsTable}'
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ReceiptsTable
 
   FetchReceiptsFunction:
     Type: AWS::Serverless::Function
@@ -55,21 +85,22 @@ Resources:
             Method: get
             RestApiId: !Ref ReceiptsApiGateway
       Policies:
-        - S3ReadPolicy:
-            BucketName: my-receipts-bucket
         - Version: '2012-10-17'
           Statement:
             - Effect: 'Allow'
               Action:
                 - "dynamodb:Query"
                 - "dynamodb:Scan"
-              Resource: 'arn:aws:dynamodb:eu-west-3:891377093620:table/receipts'
+              Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ReceiptsTable}'
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ReceiptsTable
 
-  UploadReceiptsFunction:
+  UploadReceiptFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: receipts/
-      Handler: upload_receipts.lambda_handler
+      Handler: upload_receipt.lambda_handler
       Runtime: python3.12
       Architectures:
         - arm64
@@ -81,15 +112,16 @@ Resources:
             Method: post
             RestApiId: !Ref ReceiptsApiGateway
       Policies:
-        - S3WritePolicy:
-            BucketName: my-receipts-bucket
         - Version: '2012-10-17'
           Statement:
             - Effect: 'Allow'
               Action:
                 - "s3:PutObject"
                 - "s3:PutObjectAcl"
-              Resource: 'arn:aws:s3:::my-receipts-bucket/*'
+              Resource: !Sub 'arn:aws:s3:::${ReceiptsBucket}/*'
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref ReceiptsBucket
 
   ReceiptsApiGateway:
       Type: 'AWS::Serverless::Api'
@@ -103,20 +135,38 @@ Resources:
         BinaryMediaTypes:
           - "multipart/form-data"
 
+  # permissions, roles, etc
 
-#Outputs:
-#  ProcessReceiptsFunction:
-#    Description: "ProcessReceipts Lambda Function ARN"
-#    Value: !GetAtt ProcessReceiptsFunction.Arn
-#  ProcessReceiptsFunctionIamRole:
-#    Description: "Implicit IAM Role created for ProcessReceipts function"
-#    Value: !GetAtt ProcessReceiptsFunctionRole.Arn
-#  FetchReceiptsFunction:
-#    Description: "ProcessReceipts Lambda Function ARN"
-#    Value: !GetAtt FetchReceiptsFunction.Arn
-#  FetchReceiptsFunctionIamRole:
-#    Description: "Implicit IAM Role created for ProcessReceipts function"
-#    Value: !GetAtt FetchReceiptsFunctionRole.Arn
-#  ReceiptsApi:
-#    Description: "API Gateway endpoint URL for Prod stage for fetch_receipts function"
-#    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/receipts"
+  AllowS3ToCallProcessReceiptsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref ProcessReceiptsFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt ReceiptsBucket.Arn
+
+  TextractServiceRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: textract.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: S3AccessPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - "s3:GetObject"
+                    - "s3:ListBucket"
+                    - "s3:GetBucketLocation"
+                    - "s3:ListAllMyBuckets"
+                  Resource:
+                    - !Sub 'arn:aws:s3:::${ReceiptsBucket}'
+                    - !Sub 'arn:aws:s3:::${ReceiptsBucket}/*'
+                    - !Sub 'arn:aws:s3:::*'

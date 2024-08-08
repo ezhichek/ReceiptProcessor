@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 import re
 from decimal import Decimal
 
@@ -10,11 +11,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-RECEIPTS_BUCKET = 'my-receipts-bucket'
-RESULTS_BUCKET = 'result-receipts'
+table_name = os.environ['TABLE_NAME']
 
 s3 = boto3.client('s3')
-textract = boto3.client('textract')
+textract = boto3.client('textract', region_name='eu-west-3')
 dynamodb = boto3.resource('dynamodb')
 bedrock = boto3.client('bedrock-runtime', region_name='us-east-1')
 
@@ -42,43 +42,41 @@ model_configs = {
 }
 
 def lambda_handler(event, context):
-    query_params = event.get('queryStringParameters', {})
 
-    model_id = query_params.get('model_id', 'claude-3-sonnet-textract')
+    table = dynamodb.Table(table_name)
 
-    model_config = model_configs[model_id]
+    for record in event['Records']:
 
-    if model_config is None:
-        raise Exception('No model config with id {}'.format(model_id))
+        bucket = record['s3']['bucket']['name']
+        file = record['s3']['object']['key']
 
-    response = s3.list_objects_v2(Bucket=RECEIPTS_BUCKET)
-
-    table = dynamodb.Table('receipts')
-
-    if 'Contents' not in response:
-        print(f"No objects found in bucket {RECEIPTS_BUCKET}")
-        return
-
-    for obj in response['Contents']:
-
-        file = obj['Key']
         if not file.lower().endswith('.jpg'):
             print(f"File {file} is not a supported image format. Skipping.")
             continue
 
-        json_chat_response = parse_receipt(RECEIPTS_BUCKET, file, model_config['model'], model_config['use_textract'])
+        for model_id, model_config in model_configs.items():
 
-        if json_chat_response is not None:
+            model = model_config['model']
+            use_textract = model_config['use_textract']
+
+            print(f"Processing receipt (model: {model.model_id}, with_textract: {use_textract}, bucket: {bucket}, file: {file})\n")
+
+            json_chat_response = parse_receipt(bucket, file, model, use_textract)
+
+            if json_chat_response is None:
+                continue
+
             json_chat_response['model_id'] = model_id
             json_chat_response['file_name'] = file
             # convert all floats to Decimal (required by dynamo)
             json_chat_response = json.loads(json.dumps(json_chat_response), parse_float=Decimal)
             response = table.put_item(Item=json_chat_response)
 
+
 def parse_receipt(bucket, file, model, use_textract):
     try:
 
-        print(f"Parsing receipt (model: {model.model_id}, with_textract: {use_textract}, bucket: {bucket}, file: {file}\n")
+        print(f"Parsing receipt (model: {model.model_id}, with_textract: {use_textract}, bucket: {bucket}, file: {file})\n")
 
         prompt = create_prompt(bucket, file, use_textract)
         llm_chain = prompt | model | StrOutputParser()
@@ -89,7 +87,7 @@ def parse_receipt(bucket, file, model, use_textract):
         return parse_json_from_chat_response(chat_response)
 
     except Exception as e:
-        print(f"Error processing file {file}: {str(e)}")
+        print(f"Error parsing receipt (model: {model.model_id}, with_textract: {use_textract}, bucket: {bucket}, file: {file}): {str(e)}")
         return None
 
 

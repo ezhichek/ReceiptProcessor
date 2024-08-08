@@ -1,11 +1,11 @@
 import base64
+import os
 from io import BytesIO
 
 import boto3
 from multipart import parse_form_data
 
-RECEIPTS_BUCKET = 'my-receipts-bucket'
-
+bucket_name = os.environ['BUCKET_NAME']
 s3 = boto3.client('s3')
 
 DEFAULT_HEADERS = {
@@ -32,7 +32,7 @@ def lambda_handler(event, context):
 
         for key, file in files.items():
             print(f"Uploading receipt (file name: {file.filename}, size: {file.size})\n")
-            s3.put_object(Bucket=RECEIPTS_BUCKET, Key=file.filename, Body=file.raw)
+            s3.put_object(Bucket=bucket_name, Key=file.filename, Body=file.raw)
 
         return {
             'statusCode': 200,

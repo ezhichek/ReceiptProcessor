@@ -1,10 +1,13 @@
 import json
+import os
+
 import boto3
 from decimal import Decimal
 from boto3.dynamodb.conditions import Key
 
+table_name = os.environ['TABLE_NAME']
 dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('receipts')
+table = dynamodb.Table(table_name)
 
 DEFAULT_HEADERS = {
     'Access-Control-Allow-Headers': 'Content-Type',
