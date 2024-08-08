@@ -59,7 +59,11 @@ Resources:
               Resource: '*'
             - Effect: 'Allow'
               Action:
-                - 's3:ReadObject'
+                - "s3:ReadObject"
+                - "s3:GetObject"
+                - "s3:ListBucket"
+                - "s3:GetObjectVersion"
+                - "s3:GetBucketLocation"
               Resource: !Sub 'arn:aws:s3:::*/*'
             - Effect: 'Allow'
               Action:
@@ -145,28 +149,3 @@ Resources:
       Principal: s3.amazonaws.com
       SourceArn: !GetAtt ReceiptsBucket.Arn
 
-  TextractServiceRole:
-      Type: AWS::IAM::Role
-      Properties:
-        AssumeRolePolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Principal:
-                Service: textract.amazonaws.com
-              Action: sts:AssumeRole
-        Policies:
-          - PolicyName: S3AccessPolicy
-            PolicyDocument:
-              Version: '2012-10-17'
-              Statement:
-                - Effect: Allow
-                  Action:
-                    - "s3:GetObject"
-                    - "s3:ListBucket"
-                    - "s3:GetBucketLocation"
-                    - "s3:ListAllMyBuckets"
-                  Resource:
-                    - !Sub 'arn:aws:s3:::${ReceiptsBucket}'
-                    - !Sub 'arn:aws:s3:::${ReceiptsBucket}/*'
-                    - !Sub 'arn:aws:s3:::*'
